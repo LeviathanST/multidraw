@@ -1,0 +1,17 @@
+.{
+    .name = .server,
+    .version = "0.0.1",
+    .dependencies = .{
+        .websocket = .{
+            .url = "git+https://github.com/karlseguin/websocket.zig?ref=master#efa879736bd438bea8b86a91f220ba408de57273",
+            .hash = "websocket-0.1.0-ZPISdWoTBQA8iviFsepUZiKrmT-oEyc-BwfbVzYwu7LO",
+        },
+        .zig_dotenv = .{
+            .url = "git+https://github.com/deatil/zig-dotenv#5972c3068558dedb11dda81dfe0d903016a5c788",
+            .hash = "zig_dotenv-1.2.0-eTg6iUplAADGPK-OkmWcUFdfo3ctvRMPTDYNz6G58H7-",
+        },
+    },
+    .minimum_zig_version = "0.16.0",
+    .paths = .{""},
+    .fingerprint = 0x5a6dd5f6abe36873,
+}
