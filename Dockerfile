@@ -33,7 +33,9 @@ COPY --from=client-builder /app/client/dist ./dist
 COPY --from=server-builder /app/multidraw ./multidraw
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY start.sh /start.sh
-RUN adduser -D -s /bin/sh app \
+RUN apk add --no-cache libcap \
+ && setcap -r /usr/bin/caddy \
+ && adduser -D -s /bin/sh app \
  && mkdir -p /tmp/config /tmp/data /config /data \
  && chown -R app:app /srv /etc/caddy /tmp /config /data 2>/dev/null || chown -R app:app /srv /etc/caddy /tmp \
  && chmod +x /start.sh ./multidraw
