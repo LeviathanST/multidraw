@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: multidraw
+    runtime: docker
+    plan: free
+    branch: master
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 10000
+      # Zig WS is internal; Caddy proxies /ws to it
+      - key: WS_ADDR
+        value: 127.0.0.1
+      - key: WS_PORT
+        value: 3030

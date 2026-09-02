@@ -4,18 +4,19 @@ const dotenv = @import("dotenv");
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
+    var osEnv = init.environ_map;
     var env = dotenv.Dotenv.init(allocator, .{});
     defer env.deinit();
 
     var server = try ws.Server(Handler).init(init.io, allocator, .{
         .port = parsePort: {
-            const envPort = env.get("PORT");
+            const envPort = env.get("WS_PORT") orelse osEnv.get("WS_PORT");
             if (envPort != null)
                 break :parsePort try std.fmt.parseInt(u16, envPort.?, 10);
 
             break :parsePort 3030;
         },
-        .address = env.get("ADDR") orelse "127.0.0.1",
+        .address = env.get("WS_ADDR") orelse osEnv.get("WS_ADDR") orelse "127.0.0.1",
         .handshake = .{
             .timeout = 3,
             .max_size = 1024,
