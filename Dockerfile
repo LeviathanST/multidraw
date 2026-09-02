@@ -26,13 +26,16 @@ RUN zig build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-musl \
 
 FROM caddy:2-alpine AS runtime
 ENV PORT=8080
+ENV XDG_CONFIG_HOME=/tmp
+ENV XDG_DATA_HOME=/tmp
 WORKDIR /srv
 COPY --from=client-builder /app/client/dist ./dist
 COPY --from=server-builder /app/multidraw ./multidraw
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY start.sh /start.sh
 RUN adduser -D -s /bin/sh app \
- && chown -R app:app /srv /etc/caddy /config /data 2>/dev/null || chown -R app:app /srv /etc/caddy \
+ && mkdir -p /tmp/config /tmp/data /config /data \
+ && chown -R app:app /srv /etc/caddy /tmp /config /data 2>/dev/null || chown -R app:app /srv /etc/caddy /tmp \
  && chmod +x /start.sh ./multidraw
 USER app
 EXPOSE 8080
