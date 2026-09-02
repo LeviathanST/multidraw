@@ -1,0 +1,30 @@
+{
+	admin off
+}
+
+:{$PORT:8080} {
+	# ws proxy must be first
+	@ws {
+		path /ws /ws/*
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @ws {
+		reverse_proxy {$WS_ADDR:127.0.0.1}:{$WS_PORT:3030}
+	}
+
+	handle {
+		root * /srv/dist
+		# SPA fallback: try file, then index.html
+		try_files {path} {path}/ /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+
+	# optional: enable compression
+	encode zstd gzip
+}
