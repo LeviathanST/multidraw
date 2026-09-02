@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { lineTo, setupCanvas, type Position } from "./lib/canvas";
+  import { getWsURL } from "./lib/env";
   type SendPayload = {
     drawFrom: Position;
     drawTo: Position;
@@ -14,7 +15,7 @@
   let prevPos = $state<Position | null>(null);
   let currPos = $state<Position | null>(null);
 
-  let ws = new WebSocket("ws://127.0.0.1:3030");
+  let ws = new WebSocket(getWsURL());
 
   function send(data: SendPayload) {
     ws.send(JSON.stringify(data));
