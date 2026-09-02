@@ -31,6 +31,9 @@ COPY --from=client-builder /app/client/dist ./dist
 COPY --from=server-builder /app/multidraw ./multidraw
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY start.sh /start.sh
-RUN chmod +x /start.sh
+RUN adduser -D -s /bin/sh app \
+ && chown -R app:app /srv /etc/caddy /config /data 2>/dev/null || chown -R app:app /srv /etc/caddy \
+ && chmod +x /start.sh ./multidraw
+USER app
 EXPOSE 8080
 CMD ["/start.sh"]
