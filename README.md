@@ -1,14 +1,27 @@
+> [!NOTE]
+> This is a pet project — expect bugs and inactive development.
+> Forks and contributions are welcome!
+
 # MultiDraw
 
 Draw with your friends online, right in your browser.
 
-MultiDraw is a shared whiteboard. Open a room, send the link, and sketch together on the same canvas — every stroke shows up on everyone's screen as you draw. No account, no install. One tool done well: the pen.
+MultiDraw is a shared whiteboard — a simple tool that lets people draw together. No account, no install.
 
 ## Usage
 
-1. Open MultiDraw.
+1. Open [the live MultiDraw](https://multidraw-tul6.onrender.com).
 2. Share your room link with friends.
 3. Pick a color and draw together.
+
+## Features
+- [ ] Data persistence (download + upload session)
+- [ ] Tools
+  - [x] Pencil
+  - [ ] Brush
+  - [ ] Color picker
+  - [ ] Shapes (Rectangle, Circle, ...)
+  - [ ] Images (planned)
 
 ## License
 
