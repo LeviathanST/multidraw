@@ -17,6 +17,9 @@ pub fn build(b: *std.Build) void {
     const ws = b.dependency("websocket", .{ .target = t, .optimize = o });
     exe.root_module.addImport("ws", ws.module("websocket"));
 
+    const uuid = b.dependency("uuid", .{ .target = t, .optimize = o });
+    exe.root_module.addImport("uuid", uuid.module("uuid"));
+
     const dotenv = b.dependency("zig_dotenv", .{});
     exe.root_module.addImport("dotenv", dotenv.module("zig-dotenv"));
 

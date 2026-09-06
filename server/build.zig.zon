@@ -10,6 +10,10 @@
             .url = "git+https://github.com/deatil/zig-dotenv#5972c3068558dedb11dda81dfe0d903016a5c788",
             .hash = "zig_dotenv-1.2.0-eTg6iUplAADGPK-OkmWcUFdfo3ctvRMPTDYNz6G58H7-",
         },
+        .uuid = .{
+            .url = "https://codeberg.org/r4gus/uuid-zig/archive/0.6.0.tar.gz",
+            .hash = "uuid-0.5.0-oOieIRSbAACFMLvr97X_oGqnr91fdthOrxzHaRI28bhJ",
+        },
     },
     .minimum_zig_version = "0.16.0",
     .paths = .{""},
