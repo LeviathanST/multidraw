@@ -1,8 +1,8 @@
 const std = @import("std");
 const ws = @import("ws");
 const dotenv = @import("dotenv");
-const uuid = @import("uuid");
 
+const Message = @import("websocket.zig").Message;
 const Session = @import("Session.zig");
 
 pub fn main(init: std.process.Init) !void {
@@ -100,7 +100,7 @@ const Handler = struct {
             }
 
             try std.json.fmt(
-                s.strokes.items,
+                Message{ .history = .{ .strokes = s.strokes.items } },
                 .{},
             ).format(&stroke_msg.interface);
         }
@@ -109,10 +109,12 @@ const Handler = struct {
             var init_msg = self.conn.writeBuffer(self.app.gpa, .text);
             defer init_msg.deinit();
 
-            try std.json.fmt(.{
-                .type = "init",
-                .session_id = self.session_id,
-            }, .{}).format(&init_msg.interface);
+            try std.json.fmt(
+                Message{
+                    .init = .{ .session_id = self.session_id },
+                },
+                .{},
+            ).format(&init_msg.interface);
 
             try init_msg.send();
         }
@@ -158,36 +160,40 @@ const Handler = struct {
     }
 
     pub fn clientMessage(self: *Handler, data: []const u8) !void {
-        try self.app.mutex.lock(self.conn.io);
-        defer self.app.mutex.unlock(self.conn.io);
-        const s = self.app.sessions.getPtr(self.session_id) orelse return;
-
-        // avoid touching to the list when iterate
-        var pcps = clone: {
-            try s.mutex.lock(self.conn.io);
-            defer s.mutex.unlock(self.conn.io);
-            break :clone try s.participants.clone(self.app.gpa);
-        };
-        defer pcps.deinit(self.app.gpa);
-
-        const parsed = try std.json.parseFromSlice([]Session.Stroke, self.app.gpa, data, .{});
+        const parsed = try std.json.parseFromSlice(Message, self.app.gpa, data, .{});
         defer parsed.deinit();
-        if (parsed.value.len == 0) return;
 
-        {
-            try s.mutex.lock(self.conn.io);
-            defer s.mutex.unlock(self.conn.io);
-            try s.strokes.append(self.app.gpa, parsed.value[0]);
-        }
+        switch (parsed.value) {
+            .draw => |stroke| {
+                try self.app.mutex.lock(self.conn.io);
+                defer self.app.mutex.unlock(self.conn.io);
+                const s = self.app.sessions.getPtr(self.session_id) orelse return;
 
-        for (pcps.items) |pcp| {
-            if (pcp.conn == self.conn) continue;
+                // avoid touching to the list when iterate
+                var pcps = clone: {
+                    try s.mutex.lock(self.conn.io);
+                    defer s.mutex.unlock(self.conn.io);
+                    break :clone try s.participants.clone(self.app.gpa);
+                };
+                defer pcps.deinit(self.app.gpa);
 
-            if (pcp.conn.write(data)) |_| {
-                // success, nothing to do
-            } else |err| {
-                std.log.err("Errors occur when sending message: {s}", .{@errorName(err)});
-            }
+                {
+                    try s.mutex.lock(self.conn.io);
+                    defer s.mutex.unlock(self.conn.io);
+                    try s.strokes.append(self.app.gpa, stroke);
+                }
+
+                for (pcps.items) |pcp| {
+                    if (pcp.conn == self.conn) continue;
+
+                    if (pcp.conn.write(data)) |_| {
+                        // success, nothing to do
+                    } else |err| {
+                        std.log.err("Errors occur when sending message: {s}", .{@errorName(err)});
+                    }
+                }
+            },
+            else => return, // TODO: send an error msg
         }
     }
 };
