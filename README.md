@@ -15,7 +15,7 @@ MultiDraw is a shared whiteboard — a simple tool that lets people draw togethe
 3. Pick a color and draw together.
 
 ## Features
-- [ ] Session rooms: users can create a room and let people join rooms by room ids
+- [x] Session rooms: create a room and share the link to draw together
 - [ ] Data persistence (download + upload session)
 - [ ] Tools
   - [x] Pencil
