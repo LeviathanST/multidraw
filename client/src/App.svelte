@@ -2,24 +2,16 @@
   import { onMount } from "svelte";
   import { lineTo, setupCanvas, type Position } from "./lib/canvas";
   import { getWsURL } from "./lib/env";
-  type SendPayload = {
-    drawFrom: Position;
-    drawTo: Position;
-  };
+  import type { WsMessage, Stroke } from "./lib/types";
 
   let ctx = $state<CanvasRenderingContext2D | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
   let error = $state<string | null>(null);
   let isDrawing = $state<boolean>(false);
+  let ws = $state<WebSocket | null>(null);
 
   let prevPos = $state<Position | null>(null);
   let currPos = $state<Position | null>(null);
-
-  let ws = new WebSocket(getWsURL());
-
-  function send(data: SendPayload) {
-    ws.send(JSON.stringify(data));
-  }
 
   onMount(() => {
     if (canvas == null) {
@@ -31,14 +23,44 @@
       return null;
     }
     ctx = setupCanvas(canvas);
+
+    const sid = new URLSearchParams(window.location.search).get("sessionId");
+    ws = new WebSocket(getWsURL(sid));
+
+    ws.onmessage = (event) => {
+      let payload: WsMessage | null = null;
+
+      try {
+        payload = JSON.parse(event.data);
+      } catch (err) {
+        error = "There are some issues when parsing data";
+        return;
+      }
+
+      if (payload?.type != undefined && payload.type === "init") {
+        const url = new URL(window.location.href);
+        url.searchParams.set("sessionId", payload.data.session_id);
+        history.replaceState(null, "", url);
+        return;
+      }
+
+      if (payload?.type == "history")
+        payload.data.strokes.forEach(
+          (e) => ctx && lineTo(ctx, e.drawFrom, e.drawTo),
+        );
+
+      if (payload?.type === "draw" && ctx != null)
+        lineTo(ctx, payload.data.drawFrom, payload.data.drawTo);
+    };
+
+    return () => ws?.close();
   });
 
-  ws.onmessage = (event) => {
-    if (ctx == null) return;
-
-    let payload: SendPayload = JSON.parse(event.data);
-    lineTo(ctx, payload.drawFrom, payload.drawTo);
-  };
+  function send(data: Stroke) {
+    if (ws == null || ws.readyState !== WebSocket.OPEN) return;
+    const msg: WsMessage = { type: "draw", data };
+    ws.send(JSON.stringify(msg));
+  }
 
   function resize() {
     if (canvas == null) return;
