@@ -6,32 +6,12 @@ const Self = @This();
 
 id: [36]u8,
 strokes: std.ArrayList(Stroke) = .empty,
+participants: std.ArrayList(Participant) = .empty,
 mutex: std.Io.Mutex = .init,
-pcp_list: ParticipantList = .{},
 
-pub const WS_MESSAGE = enum {
-    INIT,
-    HISTORY,
-};
-
-pub const ParticipantList = struct {
-    participants: std.ArrayList(Participant) = .empty,
-    mut: std.Io.Mutex = .init,
-
-    pub const Participant = struct {
-        conn: *ws.Conn,
-        isOwner: bool,
-    };
-
-    pub fn fromOwner(gpa: std.mem.Allocator, owner_conn: *ws.Conn) !ParticipantList {
-        var list = ParticipantList{};
-        try list.participants.append(gpa, .{ .conn = owner_conn, .isOwner = true });
-        return list;
-    }
-
-    pub fn addOne(self: *ParticipantList, gpa: std.mem.Allocator, conn: *ws.Conn) !void {
-        try self.participants.append(gpa, .{ .conn = conn, .isOwner = false });
-    }
+pub const Participant = struct {
+    conn: *ws.Conn,
+    isOwner: bool,
 };
 
 pub const Stroke = struct {
@@ -39,18 +19,6 @@ pub const Stroke = struct {
     drawTo: Position,
     pub const Position = struct { x: f32, y: f32 };
 };
-
-pub fn deinit(self: *Self, gpa: std.mem.Allocator) void {
-    self.strokes.deinit(gpa);
-    self.pcp_list.participants.deinit(gpa);
-}
-
-pub fn create(gpa: std.mem.Allocator, owner_conn: *ws.Conn) !Self {
-    return Self{
-        .id = uuid.urn.serialize(uuid.v4.new(owner_conn.io)),
-        .pcp_list = try .fromOwner(gpa, owner_conn),
-    };
-}
 
 /// return null if not found any valid params.
 pub fn parseIdFromUrl(url: []const u8) ?[]u8 {
@@ -74,4 +42,23 @@ pub fn parseIdFromUrl(url: []const u8) ?[]u8 {
     }
 
     return null;
+}
+
+pub fn create(gpa: std.mem.Allocator, owner_conn: *ws.Conn) !Self {
+    var pcps = std.ArrayList(Participant).empty;
+    try pcps.append(gpa, .{ .conn = owner_conn, .isOwner = true });
+
+    return Self{
+        .id = uuid.urn.serialize(uuid.v4.new(owner_conn.io)),
+        .participants = pcps,
+    };
+}
+
+pub fn deinit(self: *Self, gpa: std.mem.Allocator) void {
+    self.strokes.deinit(gpa);
+    self.participants.deinit(gpa);
+}
+
+pub fn addOneParticipant(self: *Self, gpa: std.mem.Allocator, conn: *ws.Conn) !void {
+    try self.participants.append(gpa, .{ .conn = conn, .isOwner = false });
 }

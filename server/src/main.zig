@@ -40,71 +40,84 @@ const Handler = struct {
     session_id: []u8,
 
     pub fn init(h: *ws.Handshake, conn: *ws.Conn, app: *App) !Handler {
-        const sessionId = Session.parseIdFromUrl(h.url);
-
-        if (sessionId) |id| {
-            try app.mutex.lock(conn.io);
-            if (app.sessions.getPtr(id)) |s| {
-                app.mutex.unlock(conn.io);
-
-                try s.pcp_list.mut.lock(conn.io);
-                defer s.pcp_list.mut.unlock(conn.io);
-                try s.pcp_list.addOne(app.gpa, conn);
-
-                return .{
-                    .session_id = try app.gpa.dupe(u8, id),
-                    .app = app,
-                    .conn = conn,
-                };
-            } else {
-                app.mutex.unlock(conn.io);
-                return .{
-                    .session_id = try app.addSession(conn),
-                    .app = app,
-                    .conn = conn,
-                };
-            }
-        } else {
+        const id = Session.parseIdFromUrl(h.url) orelse {
             return .{
                 .session_id = try app.addSession(conn),
                 .app = app,
                 .conn = conn,
             };
+        };
+
+        try app.mutex.lock(conn.io);
+        const s = app.sessions.getPtr(id) orelse {
+            app.mutex.unlock(conn.io);
+            return .{
+                .session_id = try app.addSession(conn),
+                .app = app,
+                .conn = conn,
+            };
+        };
+
+        {
+            defer app.mutex.unlock(conn.io);
+
+            try s.mutex.lock(conn.io);
+            defer s.mutex.unlock(conn.io);
+            try s.addOneParticipant(app.gpa, conn);
         }
+
+        return .{
+            .session_id = try app.gpa.dupe(u8, id),
+            .app = app,
+            .conn = conn,
+        };
     }
 
     pub fn afterInit(self: *Handler) !void {
-        // send the current data of the session to the new connection
-        var stroke_json_str = std.Io.Writer.Allocating.init(self.app.gpa);
-        defer stroke_json_str.deinit();
-        var init_json_str = std.Io.Writer.Allocating.init(self.app.gpa);
-        defer init_json_str.deinit();
+        var stroke_msg = self.conn.writeBuffer(self.app.gpa, .text);
+        defer stroke_msg.deinit();
 
         var isOwner = false;
 
-        blk: {
-            // TODO: handle error
-            const session = self.app.sessions.getPtr(self.session_id) orelse return;
-            try session.*.mutex.lock(self.conn.io);
-            defer session.*.mutex.unlock(self.conn.io);
+        { // format json string
+            try self.app.mutex.lock(self.conn.io);
+            defer self.app.mutex.unlock(self.conn.io);
 
-            for (session.pcp_list.participants.items) |pcp| {
+            const s =
+                self
+                    .app
+                    .sessions
+                    .getPtr(self.session_id) orelse return;
+
+            try s.*.mutex.lock(self.conn.io);
+            defer s.*.mutex.unlock(self.conn.io);
+
+            for (s.participants.items) |pcp| {
                 if (pcp.conn == self.conn) {
                     isOwner = pcp.isOwner;
                     break;
                 }
             }
 
-            try std.json.fmt(.{ .type = "init", .session_id = self.session_id }, .{}).format(&init_json_str.writer);
-            try std.json.fmt(session.strokes.items, .{}).format(&stroke_json_str.writer);
-            break :blk;
+            try std.json.fmt(
+                s.strokes.items,
+                .{},
+            ).format(&stroke_msg.interface);
         }
 
         if (isOwner) {
-            try self.conn.write(init_json_str.toArrayList().items);
+            var init_msg = self.conn.writeBuffer(self.app.gpa, .text);
+            defer init_msg.deinit();
+
+            try std.json.fmt(.{
+                .type = "init",
+                .session_id = self.session_id,
+            }, .{}).format(&init_msg.interface);
+
+            try init_msg.send();
         }
 
-        try self.conn.write(stroke_json_str.toArrayList().items);
+        try stroke_msg.send();
     }
 
     pub fn close(self: *Handler) void {
@@ -120,17 +133,19 @@ const Handler = struct {
         defer self.app.mutex.unlock(self.conn.io);
 
         if (self.app.sessions.getPtr(self.session_id)) |s| {
-            try s.pcp_list.mut.lock(self.conn.io);
+            const pcps = &s.participants;
 
-            for (s.pcp_list.participants.items, 0..) |pcp, i| {
+            try s.mutex.lock(self.conn.io);
+            for (pcps.items, 0..) |pcp, i| {
                 if (pcp.conn == self.conn) {
-                    _ = s.pcp_list.participants.swapRemove(i);
+                    _ = pcps.*.swapRemove(i);
                     break;
                 }
             }
-            s.pcp_list.mut.unlock(self.conn.io);
+            const remains = pcps.items.len;
+            s.mutex.unlock(self.conn.io);
 
-            if (s.pcp_list.participants.items.len == 0) {
+            if (remains == 0) {
                 const remove = self.app.sessions.fetchRemove(self.session_id);
                 if (remove) |*r| {
                     self.app.gpa.free(r.key);
@@ -144,37 +159,35 @@ const Handler = struct {
 
     pub fn clientMessage(self: *Handler, data: []const u8) !void {
         try self.app.mutex.lock(self.conn.io);
-        if (self.app.sessions.getPtr(self.session_id)) |s| {
-            self.app.mutex.unlock(self.conn.io);
+        defer self.app.mutex.unlock(self.conn.io);
+        const s = self.app.sessions.getPtr(self.session_id) orelse return;
 
-            // avoid touching to the list when iterate
-            var pcps = clone: {
-                try s.pcp_list.mut.lock(self.conn.io);
-                defer s.pcp_list.mut.unlock(self.conn.io);
-                break :clone try s.pcp_list.participants.clone(self.app.gpa);
-            };
-            defer pcps.deinit(self.app.gpa);
+        // avoid touching to the list when iterate
+        var pcps = clone: {
+            try s.mutex.lock(self.conn.io);
+            defer s.mutex.unlock(self.conn.io);
+            break :clone try s.participants.clone(self.app.gpa);
+        };
+        defer pcps.deinit(self.app.gpa);
 
-            const parsed = try std.json.parseFromSlice([]Session.Stroke, self.app.gpa, data, .{});
-            defer parsed.deinit();
+        const parsed = try std.json.parseFromSlice([]Session.Stroke, self.app.gpa, data, .{});
+        defer parsed.deinit();
+        if (parsed.value.len == 0) return;
 
-            {
-                try s.mutex.lock(self.conn.io);
-                defer s.mutex.unlock(self.conn.io);
-                try s.strokes.append(self.app.gpa, parsed.value[0]);
+        {
+            try s.mutex.lock(self.conn.io);
+            defer s.mutex.unlock(self.conn.io);
+            try s.strokes.append(self.app.gpa, parsed.value[0]);
+        }
+
+        for (pcps.items) |pcp| {
+            if (pcp.conn == self.conn) continue;
+
+            if (pcp.conn.write(data)) |_| {
+                // success, nothing to do
+            } else |err| {
+                std.log.err("Errors occur when sending message: {s}", .{@errorName(err)});
             }
-
-            for (pcps.items) |pcp| {
-                if (pcp.conn == self.conn) continue;
-
-                if (pcp.conn.write(data)) |_| {
-                    // success, nothing to do
-                } else |err| {
-                    std.log.err("Errors occur when sending message: {s}", .{@errorName(err)});
-                }
-            }
-        } else {
-            self.app.mutex.unlock(self.conn.io);
         }
     }
 };
@@ -202,6 +215,8 @@ const App = struct {
         defer self.mutex.unlock(owner_conn.io);
 
         const s = try Session.create(self.gpa, owner_conn);
+        // seperate owners to avoid freeing the memory after a connection
+        // is closed but the session is still valid
         try self.sessions.put(try self.gpa.dupe(u8, &s.id), s);
         return try self.gpa.dupe(u8, &s.id);
     }
